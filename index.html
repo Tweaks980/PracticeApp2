@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Golf Practice – Log</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div class="shell">
+    <div class="topbar">
+      <div class="brand">
+        <div class="title">Golf Practice</div>
+        <div class="sub">Log shots by date → drill → club. Everything saves on-device.</div>
+      </div>
+      <div class="nav">
+        <a class="active" href="./index.html">Log</a>
+        <a href="./stats.html">Stats</a>
+        <button id="btnClubs" class="primary">Clubs</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <div class="field">
+          <label class="small">Date</label>
+          <input id="date" type="date" />
+        </div>
+        <button id="btnPrev" class="btn" title="Previous session date">← Prev</button>
+        <button id="btnNext" class="btn" title="Next session date">Next →</button>
+
+        <div class="field" style="flex:1; min-width:220px;">
+          <label class="small">Drill</label>
+          <select id="drill"></select>
+        </div>
+      </div>
+
+      <div class="hr"></div>
+
+      <div class="header">
+        <div>
+          <h2 id="drillTitle">Pick a drill</h2>
+          <p id="drillDesc">Select a drill above. Then pick a club and start logging shots.</p>
+        </div>
+        <div class="badge" title="This is the total shots logged for this date + drill">
+          Shots logged: <strong id="shotCount">0</strong>
+        </div>
+      </div>
+
+      <div id="constraints" class="summary"></div>
+
+      <div class="hr"></div>
+
+      <div class="row" style="justify-content:space-between; gap:10px;">
+        <div class="badge" style="flex:1;">
+          Club: <strong id="clubLabel">None</strong>
+        </div>
+        <button id="btnUndo" class="btn" title="Delete the last logged shot for this date+drill">Undo last shot</button>
+      </div>
+
+      <div id="clubPills" class="pills"></div>
+
+      <div class="hr"></div>
+
+      <div id="contactSection">
+
+      <div class="header" style="margin-bottom:6px;">
+        <div>
+          <h2 style="font-size:1rem; margin:0;">Contact (optional)</h2>
+          <p style="margin:4px 0 0;">Tap any that apply for the shot you’re about to log. Multiple is allowed.</p>
+        </div>
+        <div class="badge" title="These tags reset after each logged shot">
+          Resets after shot <code class="kbd">✓</code>
+        </div>
+      </div>
+
+      <div class="grid" id="contactGrid"></div>
+
+    </div>
+
+      <div class="hr"></div>
+
+      <div class="header" style="margin-bottom:6px;">
+        <div>
+          <h2 style="font-size:1rem; margin:0;">Outcome (commits the shot)</h2>
+          <p style="margin:4px 0 0;">Tap Success or Miss. If Miss, choose direction.</p>
+        </div>
+      </div>
+
+      <div class="grid">
+        <button class="tile good" id="btnSuccess">Success <span>logs +1 shot</span></button>
+        <button class="tile bad" id="btnMiss">Miss <span>logs +1 shot</span></button>
+      </div>
+
+      <div id="missDirWrap" class="hidden">
+        <div class="hr"></div>
+        <div class="header" style="margin-bottom:6px;">
+          <div>
+            <h2 style="font-size:1rem; margin:0;">Miss direction</h2>
+            <p style="margin:4px 0 0;">Only required after tapping Miss.</p>
+          </div>
+        </div>
+        <div class="grid" id="missGrid"></div>
+      </div>
+
+      <div class="hr"></div>
+
+      <div class="summary" id="summary">
+        Tip: this page shows totals for the selected <strong>date + drill</strong> only. Use <a href="./stats.html">Stats</a> for all-time filtering.
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Club</th>
+              <th>Shots</th>
+              <th>Success</th>
+              <th>Miss</th>
+              <th>Success %</th>
+              <th>Contact logged</th>
+              <th>Solid</th>
+              <th>Thin</th>
+              <th>Fat</th>
+              <th>Toe</th>
+              <th>Heel</th>
+              <th>Solid %*</th>
+              <th>Miss: Short</th>
+              <th>Miss: Long</th>
+              <th>Miss: Left</th>
+              <th>Miss: Right</th>
+            </tr>
+          </thead>
+          <tbody id="clubTableBody"></tbody>
+        </table>
+      </div>
+
+      <div class="hint">
+        * Solid % is calculated only over swings where contact was tagged (not all shots).
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <!-- Clubs modal -->
+  <div id="modalBackdrop" class="modal-backdrop" aria-hidden="true">
+    <div class="modal" role="dialog" aria-modal="true" aria-label="Club settings">
+      <div class="modal-title">
+        <div>
+          <h3>Clubs</h3>
+          <p>Edit your club list and carry references. Changes affect pills + stats going forward.</p>
+        </div>
+        <div class="actions">
+          <button id="btnAddClub" class="btn">Add club</button>
+          <button id="btnCloseModal" class="btn blue">Done</button>
+        </div>
+      </div>
+
+      <div class="mini-grid" style="margin-top:12px;">
+        <div class="field"><label class="small">Name</label></div>
+        <div class="field"><label class="small">Loft</label></div>
+        <div class="field"><label class="small">Carry avg</label></div>
+        <div class="field"><label class="small">Min</label></div>
+        <div class="field"><label class="small">Max</label></div>
+      </div>
+
+      <div id="clubsEditor"></div>
+
+      <div class="hr"></div>
+      <div class="row" style="justify-content:space-between;">
+        <button id="btnResetClubs" class="btn red">Reset to defaults</button>
+        <button id="btnSaveClubs" class="btn blue">Save changes</button>
+      </div>
+
+      <div class="hint">
+        IDs are auto-generated from name. If you rename a club, older shots keep their stored clubId;
+        the app will still display the stored name where possible.
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="./log.js"></script>
+</body>
+</html>
