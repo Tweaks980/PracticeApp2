@@ -5,7 +5,10 @@ import {
   getUIState, setUIState,
   toast, fmtClubPill,
   shotsForDateAndDrill, aggregateByClub, pct,
-  listSessionDates
+  listSessionDates,
+  exportBackupJSON, importBackupJSON,
+  ymdToDate,
+  clearAllLogs
 } from "./app.js";
 import { DEFAULT_CLUBS } from "./data.js";
 
@@ -17,8 +20,26 @@ const drillDescEl = document.getElementById("drillDesc");
 const constraintsEl = document.getElementById("constraints");
 const clubPillsEl = document.getElementById("clubPills");
 const clubLabelEl = document.getElementById("clubLabel");
+const clubLREl = document.getElementById("clubLR");
+const contextWrap = document.getElementById("contextWrap");
+const contextSelect = document.getElementById("contextSelect");
+const shotNoteInputEl = document.getElementById("shotNoteInput");
+
+const sessionSummaryEl = document.getElementById("sessionSummary");
+const ssTitleEl = document.getElementById("ssTitle");
+const ssTodayPctEl = document.getElementById("ssTodayPct");
+const ssSuccessFracEl = document.getElementById("ssSuccessFrac");
+const ssSuccessPctEl = document.getElementById("ssSuccessPct");
+const ssAvg30El = document.getElementById("ssAvg30");
+const ssCommonMissEl = document.getElementById("ssCommonMiss");
+const ssContactTrendEl = document.getElementById("ssContactTrend");
+const ssMissLeftEl = document.getElementById("ssMissLeft");
+const ssMissRightEl = document.getElementById("ssMissRight");
+const ssMissShortEl = document.getElementById("ssMissShort");
+const ssMissLongEl = document.getElementById("ssMissLong");
 const shotCountEl = document.getElementById("shotCount");
 const clubTableBody = document.getElementById("clubTableBody");
+const sessionShotsBody = document.getElementById("sessionShotsBody");
 
 const btnPrev = document.getElementById("btnPrev");
 const btnNext = document.getElementById("btnNext");
@@ -31,6 +52,10 @@ const btnMiss = document.getElementById("btnMiss");
 const missDirWrap = document.getElementById("missDirWrap");
 const missGrid = document.getElementById("missGrid");
 
+const btnExportJson = document.getElementById("btnExportJson");
+const btnImportJson = document.getElementById("btnImportJson");
+const importJsonFile = document.getElementById("importJsonFile");
+const btnClearLogs = document.getElementById("btnClearLogs");
 const btnClubs = document.getElementById("btnClubs");
 const modalBackdrop = document.getElementById("modalBackdrop");
 const btnCloseModal = document.getElementById("btnCloseModal");
@@ -45,8 +70,49 @@ let shots = getShots();
 
 let ui = getUIState();
 let selectedDate = ui.selectedDate || todayYMD();
-let selectedDrillId = ui.selectedDrillId || drills[0]?.id || "";
-let selectedClubId = ui.selectedClubId || clubs[0]?.id || "";
+let selectedDrillId = ui.selectedDrillId || ((drills[0] && drills[0].id) ? drills[0].id : "") || "";
+let selectedClubId = ui.selectedClubId || ((clubs[0] && clubs[0].id) ? clubs[0].id : "") || "";
+
+// Context is optional and only enabled for certain drills.
+// Stored on each shot as a simple string, default "".
+let selectedContext = "";
+
+// Shot note attaches to the next committed shot, then clears.
+let pendingShotNote = "";
+
+const DRILL_CONTEXTS = {
+  "arc-depth-woods": ["Mat", "Tiny Tee", "Small Tee", "Mid Tee", "High Tee"],
+  "ball-flight-control": ["High", "Low"],
+  "blue-brick-fade-draw": ["Fade", "Draw"],
+  "knocked-down-wedges": ["60", "80", "100", "120"],
+  "ladder-lw-distance": ["10", "20", "30", "40", "50", "60", "70", "80"],
+  "variability": ["Toe Address", "Heel Address", "Center Address"],
+};
+
+function getContextOptions(drillId) {
+  const opts = DRILL_CONTEXTS[drillId];
+  return Array.isArray(opts) && opts.length ? opts : null;
+}
+
+function renderContextPicker() {
+  if (!contextWrap || !contextSelect) return;
+  const opts = getContextOptions(selectedDrillId);
+  if (!opts) {
+    contextWrap.classList.add("hidden");
+    selectedContext = "";
+    contextSelect.innerHTML = "";
+    return;
+  }
+
+  contextWrap.classList.remove("hidden");
+  contextSelect.innerHTML = "";
+  contextSelect.appendChild(new Option("(none)", ""));
+  for (const v of opts) contextSelect.appendChild(new Option(v, v));
+
+  // Keep selection if still valid; otherwise default blank.
+  if (!opts.includes(selectedContext)) selectedContext = "";
+  contextSelect.value = selectedContext;
+}
 
 let currentContact = Object.fromEntries(CONTACT_TYPES.map(k=>[k,false]));
 
@@ -109,6 +175,7 @@ function renderClubPills() {
       selectedClubId = c.id;
       setUIState({ selectedClubId });
       updateSelectedClubLabel();
+      renderSessionSummary();
       renderClubPills();
     });
     clubPillsEl.appendChild(b);
@@ -119,7 +186,100 @@ function renderClubPills() {
 function updateSelectedClubLabel() {
   const c = clubsIndex().get(selectedClubId);
   clubLabelEl.textContent = c ? c.name : "None";
+  if (clubLREl) clubLREl.textContent = c && c.lrRef ? ` ${c.lrRef}` : "";
 }
+
+function renderSessionSummary() {
+  if (!sessionSummaryEl) return;
+
+  const d = drillMap.get(selectedDrillId);
+  const c = clubsIndex().get(selectedClubId);
+  const drillName = (d && d.name) ? d.name : "—";
+  const clubName = (c && c.name) ? c.name : "—";
+
+  // Session scope: selected date + selected drill + selected club
+  const sessionAll = currentSessionShots();
+  const clubShots = sessionAll.filter(s => s.clubId === selectedClubId);
+
+  // Hide card if no shots yet for this club in this session
+  if (!clubShots.length) {
+    sessionSummaryEl.classList.add("hidden");
+    return;
+  }
+  sessionSummaryEl.classList.remove("hidden");
+
+  // Title
+  const isToday = selectedDate === todayYMD();
+  if (ssTitleEl) ssTitleEl.textContent = `${clubName} · ${drillName} · ${isToday ? "Today" : selectedDate}`;
+
+  // Success today
+  const total = clubShots.length;
+  const success = clubShots.filter(s => s.outcome === "success").length;
+  const todayPct = total ? Math.round((success / total) * 100) : null;
+  if (ssTodayPctEl) ssTodayPctEl.textContent = todayPct === null ? "–" : `${todayPct}%`;
+  if (ssSuccessFracEl) ssSuccessFracEl.textContent = `${success} / ${total}`;
+  if (ssSuccessPctEl) ssSuccessPctEl.textContent = todayPct === null ? "" : `(${todayPct}%)`;
+
+  // Miss direction counts (session)
+  const missCounts = { left:0, right:0, short:0, long:0 };
+  for (const s of clubShots) {
+    if (s.outcome !== "miss") continue;
+    const dir = s.missDirection;
+    if (dir && dir in missCounts) missCounts[dir] += 1;
+  }
+  if (ssMissLeftEl) ssMissLeftEl.textContent = String(missCounts.left);
+  if (ssMissRightEl) ssMissRightEl.textContent = String(missCounts.right);
+  if (ssMissShortEl) ssMissShortEl.textContent = String(missCounts.short);
+  if (ssMissLongEl) ssMissLongEl.textContent = String(missCounts.long);
+
+  // Most common miss
+  const dirOrder = ["right","left","short","long"];
+  let commonDir = null;
+  let commonN = 0;
+  for (const dir of dirOrder) {
+    const n = missCounts[dir] || 0;
+    if (n > commonN) { commonN = n; commonDir = dir; }
+  }
+  const niceDir = commonDir ? (commonDir[0].toUpperCase() + commonDir.slice(1)) : "–";
+  if (ssCommonMissEl) ssCommonMissEl.textContent = commonDir ? `${niceDir} (${commonN})` : "–";
+
+  // Contact trend (session): count tags across shots with contact
+  const contactCounts = Object.fromEntries(CONTACT_TYPES.map(k=>[k,0]));
+  for (const s of clubShots) {
+    const cobj = s.contact || {};
+    for (const k of CONTACT_TYPES) if (cobj[k]) contactCounts[k] += 1;
+  }
+  let topContact = null;
+  let topContactN = 0;
+  for (const k of CONTACT_TYPES) {
+    const n = contactCounts[k] || 0;
+    if (n > topContactN) { topContactN = n; topContact = k; }
+  }
+  const niceContact = topContact ? (topContact[0].toUpperCase()+topContact.slice(1)) : "–";
+  if (ssContactTrendEl) ssContactTrendEl.textContent = topContact ? `${niceContact} (${topContactN})` : "–";
+
+  // 30-day rolling average for this club (all drills), ending on selectedDate
+  const end = ymdToDate(selectedDate);
+  let avg30Text = "–";
+  if (end) {
+    const start = new Date(end.getTime());
+    start.setDate(start.getDate() - 29); // inclusive window
+    let nShots = 0;
+    let nSuccess = 0;
+    for (const s of shots) {
+      if (s.clubId !== selectedClubId) continue;
+      const sd = ymdToDate(s.date);
+      if (!sd) continue;
+      if (sd < start || sd > end) continue;
+      nShots += 1;
+      if (s.outcome === "success") nSuccess += 1;
+    }
+    if (nShots) avg30Text = `${Math.round((nSuccess / nShots) * 100)}% (${nSuccess}/${nShots})`;
+  }
+  if (ssAvg30El) ssAvg30El.textContent = avg30Text;
+  }
+}
+
 
 function renderContactGrid() {
   contactGrid.innerHTML = "";
@@ -127,7 +287,7 @@ function renderContactGrid() {
     const btn = document.createElement("button");
     btn.className = "tile" + (currentContact[k] ? " active" : "");
     btn.type = "button";
-    btn.innerHTML = `${k[0].toUpperCase()+k.slice(1)}<span>${currentContact[k] ? "tagged" : "tap to tag"}</span>`;
+    btn.textContent = k[0].toUpperCase()+k.slice(1);
     btn.addEventListener("click", () => {
       currentContact[k] = !currentContact[k];
       renderContactGrid();
@@ -180,17 +340,14 @@ function renderTable() {
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td>${a.clubName}</td>
-      <td>${a.outcomeTotal}</td>
       <td>${a.success}</td>
       <td>${a.miss}</td>
       <td>${pct(a.success, a.outcomeTotal)}</td>
-      <td>${a.contactTotal}</td>
       <td>${a.solid}</td>
       <td>${a.thin}</td>
       <td>${a.fat}</td>
       <td>${a.toe}</td>
       <td>${a.heel}</td>
-      <td>${pct(a.solid, a.contactTotal)}</td>
       <td>${a.miss_short}</td>
       <td>${a.miss_long}</td>
       <td>${a.miss_left}</td>
@@ -198,7 +355,57 @@ function renderTable() {
     `;
     clubTableBody.appendChild(tr);
   }
+
+  renderSessionSummary();
+  renderSessionShots();
+
 }
+
+
+function renderSessionShots() {
+  if (!sessionShotsBody) return;
+  const cIndex = clubsIndex();
+  const session = currentSessionShots()
+    .slice()
+    .sort((a,b)=> (a.timestamp||"").localeCompare(b.timestamp||"")); // oldest -> newest
+
+  sessionShotsBody.innerHTML = "";
+  if (!session.length) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td colspan="8" style="text-align:left; color:var(--muted);">No shots yet for this date + drill.</td>`;
+    sessionShotsBody.appendChild(tr);
+    return;
+  }
+
+  for (const s of session) {
+    const tr = document.createElement("tr");
+    const t = (s.timestamp || "").replace("T"," ").slice(11,16); // HH:MM
+    const _clubObj = cIndex.get(s.clubId); const clubName = (_clubObj && _clubObj.name) || s.clubName || s.clubId || "";
+    const contact = s.contact || {};
+    const contactTags = Object.entries(contact).filter(([k,v])=>v).map(([k])=>k).join(", ");
+    tr.innerHTML = `
+      <td style="font-family:var(--mono); font-size:.84rem;">${escapeHtml(t || "")}</td>
+      <td>${escapeHtml(clubName)}</td>
+      <td>${escapeHtml(s.context || "")}</td>
+      <td>${escapeHtml(s.shot_note || "")}</td>
+      <td>${escapeHtml(s.outcome || "")}</td>
+      <td>${escapeHtml(s.missDirection || "")}</td>
+      <td>${escapeHtml(contactTags)}</td>
+      <td><button class="btn red small" data-id="${escapeHtml(s.id)}">Delete</button></td>
+    `;
+    const _btn = tr.querySelector("button");
+    if (_btn) _btn.addEventListener("click", () => {
+      if (!confirm("Delete this shot?")) return;
+      deleteShotById(s.id);
+      shots = getShots();
+      toast("Deleted shot");
+      renderTable();
+      updatePrevNextButtons();
+    });
+    sessionShotsBody.appendChild(tr);
+  }
+}
+
 
 function commitShot(outcome, missDirection=null) {
   if (!selectedDrillId) {
@@ -212,14 +419,16 @@ function commitShot(outcome, missDirection=null) {
   const d = drillMap.get(selectedDrillId);
   const c = clubsIndex().get(selectedClubId);
   const shot = {
-    id: crypto?.randomUUID?.() || (Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 9)),
+    id: (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : (Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 9))),
     timestamp: new Date().toISOString(),
     date: selectedDate, // important: selected date (reviewable later)
     drillId: selectedDrillId,
-    drillName: d?.name ?? selectedDrillId,
+    drillName: (d && d.name) ? d.name : selectedDrillId,
     clubId: selectedClubId,
-    clubName: c?.name ?? selectedClubId,
+    clubName: (c && c.name) ? c.name : selectedClubId,
+    context: selectedContext || "",
     contact: isPuttingDrill(selectedDrillId) ? {} : { ...currentContact },
+    shot_note: (pendingShotNote || "").trim(),
     outcome,
     missDirection: outcome === "miss" ? missDirection : null,
   };
@@ -228,6 +437,9 @@ function commitShot(outcome, missDirection=null) {
   shots = getShots();
 
   resetContact();
+  // Clear shot note after it has been attached to this shot
+  pendingShotNote = "";
+  if (shotNoteInputEl) shotNoteInputEl.value = "";
   missDirWrap.classList.add("hidden");
 
   toast(outcome === "success" ? "Logged: Success" : `Logged: Miss (${missDirection})`);
@@ -255,25 +467,30 @@ function undoLastShot() {
 }
 
 function updatePrevNextButtons() {
-  const dates = listSessionDates(shots, selectedDrillId);
-  const idx = dates.indexOf(selectedDate);
+  const ids = drills.map(d=>d.id);
+  const idx = ids.indexOf(selectedDrillId);
   btnPrev.disabled = idx <= 0;
-  btnNext.disabled = idx === -1 || idx >= dates.length - 1;
-  btnPrev.title = btnPrev.disabled ? "No previous session" : `Go to ${dates[idx-1]}`;
-  btnNext.title = btnNext.disabled ? "No next session" : `Go to ${dates[idx+1]}`;
+  btnNext.disabled = idx === -1 || idx >= ids.length - 1;
+  const prevName = idx>0 ? drills[idx-1].name : "";
+  const nextName = (idx>=0 && idx<drills.length-1) ? drills[idx+1].name : "";
+  btnPrev.title = btnPrev.disabled ? "No previous drill" : `Previous drill: ${prevName}`;
+  btnNext.title = btnNext.disabled ? "No next drill" : `Next drill: ${nextName}`;
 }
 
-function goToSessionOffset(delta) {
-  const dates = listSessionDates(shots, selectedDrillId);
-  const idx = dates.indexOf(selectedDate);
-  const next = dates[idx + delta];
-  if (!next) return;
-  selectedDate = next;
-  dateEl.value = selectedDate;
-  setUIState({ selectedDate });
+function goToDrillOffset(delta) {
+  const ids = drills.map(d=>d.id);
+  const idx = ids.indexOf(selectedDrillId);
+  const nextId = ids[idx + delta];
+  if (!nextId) return;
+  selectedDrillId = nextId;
+  drillEl.value = selectedDrillId;
+  setUIState({ selectedDrillId });
+  renderDrillCard();
+  updatePuttingUI();
+  renderContextPicker();
   renderTable();
   updatePrevNextButtons();
-  toast(`Viewing ${selectedDate}`);
+  toast(`Drill: ${(() => { const _d = drills.find(d=>d.id===selectedDrillId); return (_d && _d.name) ? _d.name : selectedDrillId; })()}`);
 }
 
 // --- Clubs modal ---
@@ -358,7 +575,7 @@ function renderClubsEditor() {
 }
 
 function escapeHtml(s) {
-  return String(s ?? "")
+  return String((s === null || s === undefined) ? "" : s)
     .replaceAll("&","&amp;")
     .replaceAll("<","&lt;")
     .replaceAll(">","&gt;")
@@ -409,9 +626,8 @@ function init() {
     setUIState({ selectedDate });
     renderTable();
     updatePrevNextButtons();
-    toast(`Viewing ${selectedDate}`);
+      toast(`Viewing ${selectedDate}`);
   });
-
   // Drill
   renderDrillSelect();
   drillEl.value = selectedDrillId || "";
@@ -419,19 +635,55 @@ function init() {
     selectedDrillId = drillEl.value;
     setUIState({ selectedDrillId });
     renderDrillCard();
+    updatePuttingUI();
+    renderContextPicker();
     renderTable();
     updatePrevNextButtons();
-  });
+    });
 
   // Default drill if none
   if (!selectedDrillId) {
-    selectedDrillId = drills[0]?.id || "";
+    selectedDrillId = (drills[0] && drills[0].id) ? drills[0].id : "";
     drillEl.value = selectedDrillId;
     setUIState({ selectedDrillId });
   }
 
   // Clubs
   renderClubPills();
+
+  // Context
+  renderContextPicker();
+  if (contextSelect) {
+    contextSelect.addEventListener("change", () => {
+      selectedContext = contextSelect.value || "";
+    });
+  }
+
+  // Shot note
+  if (shotNoteInputEl) {
+    shotNoteInputEl.addEventListener("input", () => {
+      pendingShotNote = shotNoteInputEl.value || "";
+    });
+  }
+
+  // Backup / Restore
+  if (btnExportJson) btnExportJson.addEventListener("click", () => exportBackupJSON());
+  if (btnImportJson && importJsonFile) {
+    btnImportJson.addEventListener("click", () => importJsonFile.click());
+    importJsonFile.addEventListener("change", () => {
+      const file = importJsonFile.files && importJsonFile.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const text = String(reader.result || "");
+        const res = importBackupJSON(text);
+        if (res && res.ok) setTimeout(() => location.reload(), 250);
+      };
+      reader.readAsText(file);
+      // reset so selecting the same file twice still triggers change
+      importJsonFile.value = "";
+    });
+  }
 
   // Contact + miss grid
   renderContactGrid();
@@ -441,8 +693,8 @@ function init() {
   btnMiss.addEventListener("click", showMissDirs);
   btnUndo.addEventListener("click", undoLastShot);
 
-  btnPrev.addEventListener("click", ()=>goToSessionOffset(-1));
-  btnNext.addEventListener("click", ()=>goToSessionOffset(1));
+  btnPrev.addEventListener("click", ()=>goToDrillOffset(-1));
+  btnNext.addEventListener("click", ()=>goToDrillOffset(1));
 
   // Modal
   btnClubs.addEventListener("click", openModal);
@@ -479,6 +731,9 @@ function init() {
   });
 
   renderDrillCard();
+  updatePuttingUI();
+  renderContextPicker();
+  updateSelectedClubLabel();
   renderTable();
   updatePrevNextButtons();
 }

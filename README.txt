@@ -15,3 +15,9 @@ Tip (iPhone):
 - If you want this to behave like an "app", add it to your Home Screen from Safari's share menu.
 
 - Putting drills: contact section hidden automatically (Success/Miss still required)
+
+Defaults updated: includes Driver + full drill list.
+
+Backup:
+- Use Export JSON to download a full backup (shots, clubs, drills, notes).
+- Use Import JSON to restore on a new phone/browser.

@@ -11,7 +11,7 @@
   --red:#dc2626;
   --orange:#f97316;
   --pill:#f8fafc;
-  --pillActive:#eff6ff;
+  --pillActive:#dbeafe;
   --radius:14px;
   --radius2:999px;
   --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
@@ -105,8 +105,8 @@ input[type="date"], select, input[type="text"], input[type="number"]{
   outline:none;
 }
 input[type="date"]:focus, select:focus, input:focus{
-  border-color: rgba(37,99,235,.35);
-  box-shadow: 0 0 0 4px rgba(37,99,235,.10);
+  border-color: rgba(37,99,235,.55);
+  box-shadow: 0 0 0 5px rgba(37,99,235,.18);
 }
 
 .btn{
@@ -167,9 +167,9 @@ input[type="date"]:focus, select:focus, input:focus{
   font-size:.82rem;
 }
 .pill.active{
-  border-color: rgba(37,99,235,.35);
+  border-color: rgba(37,99,235,.55);
   background: var(--pillActive);
-  box-shadow: 0 0 0 4px rgba(37,99,235,.10);
+  box-shadow: 0 0 0 5px rgba(37,99,235,.18);
 }
 .pill:active{transform: translateY(1px)}
 
@@ -198,11 +198,12 @@ input[type="date"]:focus, select:focus, input:focus{
 .tile span{font-size:.82rem; font-weight:700; color: var(--muted)}
 .tile:hover{background:#f8fafc}
 .tile.active{
-  outline: 2px solid rgba(37,99,235,.25);
+  outline: 3px solid rgba(37,99,235,.35);
+  box-shadow: 0 0 0 5px rgba(37,99,235,.12);
 }
 
-.tile.good{border-color:#bbf7d0; background:#ecfdf5}
-.tile.bad{border-color:#fecaca; background:#fef2f2}
+.tile.good{border-color:#86efac; background:#dcfce7}
+.tile.bad{border-color:#fca5a5; background:#fee2e2}
 .tile.warn{border-color:#fed7aa; background:#fff7ed}
 
 .hr{height:1px; background:var(--border); margin: 12px 0}
@@ -231,7 +232,9 @@ input[type="date"]:focus, select:focus, input:focus{
   margin-top: 12px;
   border: 1px solid var(--border);
   border-radius: 14px;
-  overflow:hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
 }
 table{
   width:100%;
@@ -317,3 +320,127 @@ code.kbd{
 }
 
 .hidden{display:none !important;}
+
+
+/* --- Patch: notes + compact club chip --- */
+.badge.clubChip{flex:0; display:inline-flex; align-items:center; gap:8px; white-space:nowrap}
+.clubLR{margin-left:6px; padding:2px 8px; border-radius:999px; border:1px solid #dbe3ff; background:#f4f7ff; color:#3756a3; font-weight:600; font-size:.82rem}
+.textarea{width:100%; border:1px solid #e5e7eb; border-radius:12px; padding:10px 12px; font-size:0.95rem; resize:vertical; background:#fff}
+
+
+/* Notes list */
+.notesList{margin-top:10px; display:flex; flex-direction:column; gap:8px;}
+.noteItem{border:1px solid var(--border); background:#fff; border-radius:12px; padding:10px 12px; display:flex; justify-content:space-between; gap:10px; align-items:flex-start}
+.noteItem .meta{color:var(--muted); font-size:.82rem; white-space:nowrap; margin-left:10px}
+.noteItem .text{white-space:pre-wrap; line-height:1.35}
+.noteItem button{border:1px solid var(--border); background:#fff; border-radius:10px; padding:6px 8px; cursor:pointer}
+.noteItem button:hover{background:#f1f5f9}
+
+
+/* --- Session Summary card --- */
+.sessionSummary{
+  margin-top: 12px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: #f8fafc;
+  padding: 12px;
+}
+.sessionSummaryHeader{
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-start;
+  gap:12px;
+}
+.sessionSummary .kicker{
+  font-size:.72rem;
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  color: var(--muted);
+  font-weight:800;
+}
+.sessionSummaryTitle{
+  margin-top:4px;
+  font-weight:900;
+  letter-spacing:-.2px;
+}
+.sessionSummaryGrid{
+  display:grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap:10px;
+  margin-top:10px;
+}
+.ssBlock{
+  background:#fff;
+  border:1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 10px;
+}
+.ssLabel{
+  color: var(--muted);
+  font-size:.78rem;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+  font-weight:800;
+}
+.ssBig{
+  margin-top:6px;
+  font-size: 1.05rem;
+  font-weight: 950;
+  letter-spacing:-.2px;
+}
+.ssBig .ssPct{
+  color: var(--muted);
+  font-size:.92rem;
+  font-weight:800;
+  margin-left:6px;
+}
+.ssArrows{
+  margin-top:10px;
+  display:flex;
+  gap:10px;
+  flex-wrap:wrap;
+}
+.ssArrowRow{
+  display:flex;
+  gap:10px;
+  flex:1;
+  min-width: 220px;
+}
+.ssArrow{
+  flex:1;
+  background:#fff;
+  border:1px solid var(--border);
+  border-radius: 999px;
+  padding: 8px 10px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  font-weight:850;
+}
+.ssArrow .arr{
+  display:inline-flex;
+  width: 22px;
+  height: 22px;
+  align-items:center;
+  justify-content:center;
+  border-radius:999px;
+  background:#eef2ff;
+  border:1px solid #dbeafe;
+  margin-right:8px;
+}
+.ssNotes{ margin-top:10px; }
+.ssNotesList{ margin-top:8px; display:flex; flex-direction:column; gap:8px;}
+.ssNote{
+  background:#fff;
+  border:1px solid var(--border);
+  border-radius: 12px;
+  padding: 9px 10px;
+  display:flex;
+  justify-content:space-between;
+  gap:10px;
+}
+.ssNote .t{white-space:pre-wrap; line-height:1.35; font-weight:750;}
+.ssNote .m{color:var(--muted); font-size:.82rem; white-space:nowrap;}
+
+
+.btn.small{padding:6px 8px; border-radius:10px; font-weight:750; font-size:.86rem}

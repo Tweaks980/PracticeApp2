@@ -17,6 +17,10 @@
         <a class="active" href="./index.html">Log</a>
         <a href="./stats.html">Stats</a>
         <button id="btnClubs" class="primary">Clubs</button>
+        <button id="btnExportJson" class="btn">Export JSON</button>
+        <button id="btnImportJson" class="btn">Import JSON</button>
+        <button id="btnClearLogs" class="btn red" title="Clears all shots on this device (clubs/drills stay)">Clear logs</button>
+        <input id="importJsonFile" type="file" accept="application/json" class="hidden" />
       </div>
     </div>
 
@@ -26,8 +30,8 @@
           <label class="small">Date</label>
           <input id="date" type="date" />
         </div>
-        <button id="btnPrev" class="btn" title="Previous session date">← Prev</button>
-        <button id="btnNext" class="btn" title="Next session date">Next →</button>
+        <button id="btnPrev" class="btn" title="Previous drill">← Prev</button>
+        <button id="btnNext" class="btn" title="Next drill">Next →</button>
 
         <div class="field" style="flex:1; min-width:220px;">
           <label class="small">Drill</label>
@@ -52,13 +56,19 @@
       <div class="hr"></div>
 
       <div class="row" style="justify-content:space-between; gap:10px;">
-        <div class="badge" style="flex:1;">
-          Club: <strong id="clubLabel">None</strong>
-        </div>
+        <div class="badge clubChip">Club: <strong id="clubLabel">None</strong><span id="clubLR" class="clubLR"></span></div>
         <button id="btnUndo" class="btn" title="Delete the last logged shot for this date+drill">Undo last shot</button>
       </div>
 
       <div id="clubPills" class="pills"></div>
+
+      <!-- Context (optional; only shows for certain drills) -->
+      <div id="contextWrap" class="row hidden" style="margin-top:10px;">
+        <div class="field" style="flex:1; min-width:220px;">
+          <label class="small">Context (optional)</label>
+          <select id="contextSelect"></select>
+        </div>
+      </div>
 
       <div class="hr"></div>
 
@@ -82,14 +92,30 @@
 
       <div class="header" style="margin-bottom:6px;">
         <div>
+          <h2 style="font-size:1rem; margin:0;">Shot note (optional)</h2>
+          <p style="margin:4px 0 0;">Type anything you want to remember about the <strong>next shot</strong> you log.</p>
+        </div>
+        <div class="badge" title="This note attaches to the next committed shot">
+          Attaches to next shot <code class="kbd">✓</code>
+        </div>
+      </div>
+
+      <div class="row" style="align-items:flex-start; gap:10px;">
+        <textarea id="shotNoteInput" class="textarea" rows="2" placeholder="Quick note for this shot… (feel, intention, miss, etc.)"></textarea>
+      </div>
+
+      <div class="hr"></div>
+
+      <div class="header" style="margin-bottom:6px;">
+        <div>
           <h2 style="font-size:1rem; margin:0;">Outcome (commits the shot)</h2>
           <p style="margin:4px 0 0;">Tap Success or Miss. If Miss, choose direction.</p>
         </div>
       </div>
 
       <div class="grid">
-        <button class="tile good" id="btnSuccess">Success <span>logs +1 shot</span></button>
-        <button class="tile bad" id="btnMiss">Miss <span>logs +1 shot</span></button>
+        <button class="tile good" id="btnSuccess">Success <span></span></button>
+        <button class="tile bad" id="btnMiss">Miss <span></span></button>
       </div>
 
       <div id="missDirWrap" class="hidden">
@@ -105,7 +131,53 @@
 
       <div class="hr"></div>
 
-      <div class="summary" id="summary">
+<!-- Session Summary (read-only) -->
+      <div class="sessionSummary" id="sessionSummary" aria-live="polite">
+        <div class="sessionSummaryHeader">
+          <div>
+            <div class="kicker">Session summary</div>
+            <div class="sessionSummaryTitle" id="ssTitle">—</div>
+          </div>
+          <div class="badge" title="Based on selected date + drill + club">
+            Today: <strong id="ssTodayPct">–</strong>
+          </div>
+        </div>
+
+        <div class="sessionSummaryGrid">
+          <div class="ssBlock">
+            <div class="ssLabel">Success</div>
+            <div class="ssBig"><span id="ssSuccessFrac">–</span> <span class="ssPct" id="ssSuccessPct"> </span></div>
+          </div>
+
+          <div class="ssBlock">
+            <div class="ssLabel">30-day avg (club)</div>
+            <div class="ssBig"><span id="ssAvg30">–</span></div>
+          </div>
+
+          <div class="ssBlock">
+            <div class="ssLabel">Most common miss</div>
+            <div class="ssBig"><span id="ssCommonMiss">–</span></div>
+          </div>
+
+          <div class="ssBlock">
+            <div class="ssLabel">Contact trend</div>
+            <div class="ssBig"><span id="ssContactTrend">–</span></div>
+          </div>
+        </div>
+
+        <div class="ssArrows">
+          <div class="ssArrowRow">
+            <div class="ssArrow"><span class="arr">←</span> Left <strong id="ssMissLeft">0</strong></div>
+            <div class="ssArrow"><span class="arr">→</span> Right <strong id="ssMissRight">0</strong></div>
+          </div>
+          <div class="ssArrowRow">
+            <div class="ssArrow"><span class="arr">↓</span> Short <strong id="ssMissShort">0</strong></div>
+            <div class="ssArrow"><span class="arr">↑</span> Long <strong id="ssMissLong">0</strong></div>
+          </div>
+        </div>
+      </div>
+
+<div class="summary" id="summary">
         Tip: this page shows totals for the selected <strong>date + drill</strong> only. Use <a href="./stats.html">Stats</a> for all-time filtering.
       </div>
 
@@ -114,17 +186,14 @@
           <thead>
             <tr>
               <th>Club</th>
-              <th>Shots</th>
               <th>Success</th>
               <th>Miss</th>
               <th>Success %</th>
-              <th>Contact logged</th>
               <th>Solid</th>
               <th>Thin</th>
               <th>Fat</th>
               <th>Toe</th>
               <th>Heel</th>
-              <th>Solid %*</th>
               <th>Miss: Short</th>
               <th>Miss: Long</th>
               <th>Miss: Left</th>
@@ -134,10 +203,33 @@
           <tbody id="clubTableBody"></tbody>
         </table>
       </div>
-
-      <div class="hint">
-        * Solid % is calculated only over swings where contact was tagged (not all shots).
+      <div class="hr"></div>
+      <div class="header" style="margin-bottom:6px;">
+        <div>
+          <h2 style="font-size:1rem; margin:0;">Session shots</h2>
+          <p style="margin:4px 0 0;">Shots for the selected <strong>date + drill</strong>. Delete any shot if needed.</p>
+        </div>
       </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Club</th>
+              <th>Context</th>
+              <th>Shot note</th>
+              <th>Outcome</th>
+              <th>Miss dir</th>
+              <th>Contact</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="sessionShotsBody"></tbody>
+        </table>
+      </div>
+
+
+      
     </div>
   </div>
 

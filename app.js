@@ -2,9 +2,11 @@ import { DEFAULT_DRILLS, DEFAULT_CLUBS, ensure28Drills } from "./data.js";
 
 const KEYS = {
   SHOTS: "golfPracticeShots_v1",
-  CLUBS: "golfPracticeClubs_v1",
-  DRILLS: "golfPracticeDrills_v1",
+  CLUBS: "golfPracticeClubs_v2",
+  DRILLS: "golfPracticeDrills_v2",
   UI: "golfPracticeUI_v1",
+  NOTES: "golfPracticeNotes_v1",
+  CLUB_NOTES: "golfPracticeClubNotes_v1",
 };
 
 export const CONTACT_TYPES = ["solid", "thin", "fat", "toe", "heel"];
@@ -33,9 +35,21 @@ export function saveJSON(key, value) {
 
 export function getClubs() {
   const stored = loadJSON(KEYS.CLUBS, null);
-  if (Array.isArray(stored) && stored.length) return stored;
-  saveJSON(KEYS.CLUBS, DEFAULT_CLUBS);
-  return DEFAULT_CLUBS;
+  let clubs = (Array.isArray(stored) && stored.length) ? stored : DEFAULT_CLUBS;
+
+  // Lightweight migration: ensure Putter exists even if you have older saved clubs.
+  // (Keeps your custom clubs; just appends Putter if missing.)
+  const hasPutter = clubs.some(c => c && c.id === "P");
+  if (!hasPutter) {
+    const putter = DEFAULT_CLUBS.find(c => c.id === "P") || { id:"P", name:"Putter", loft:null, carryAvg:null, carryMin:null, carryMax:null, lrRef:"", notes:"" };
+    clubs = [...clubs, putter];
+    saveJSON(KEYS.CLUBS, clubs);
+  }
+
+  if (!(Array.isArray(stored) && stored.length)) {
+    saveJSON(KEYS.CLUBS, clubs);
+  }
+  return clubs;
 }
 
 export function setClubs(clubs) {
@@ -45,7 +59,24 @@ export function setClubs(clubs) {
 export function getDrills() {
   const stored = loadJSON(KEYS.DRILLS, null);
   const base = ensure28Drills(DEFAULT_DRILLS);
-  if (Array.isArray(stored) && stored.length) return ensure28Drills(stored);
+
+  // Lightweight migration: if you already have drills saved, append any new default drills
+  // (keeps your customized drills/order; just ensures new drills appear).
+  if (Array.isArray(stored) && stored.length) {
+    const current = ensure28Drills(stored);
+    const have = new Set(current.map(d => (d && d.id) ? d.id : null).filter(Boolean));
+    let changed = false;
+    for (const d of base) {
+      if (d && d.id && !have.has(d.id)) {
+        current.push(d);
+        have.add(d.id);
+        changed = true;
+      }
+    }
+    if (changed) saveJSON(KEYS.DRILLS, current);
+    return current;
+  }
+
   saveJSON(KEYS.DRILLS, base);
   return base;
 }
@@ -65,6 +96,15 @@ export function deleteShotById(id) {
   const shots = getShots().filter(s => s.id !== id);
   saveJSON(KEYS.SHOTS, shots);
 }
+
+export function clearAllLogs() {
+  // Clears all shots + notes on this device/browser. Keeps clubs + drills.
+  localStorage.removeItem(KEYS.SHOTS);
+  localStorage.removeItem(KEYS.NOTES);
+  localStorage.removeItem(KEYS.CLUB_NOTES);
+  toast("Cleared shots");
+}
+
 
 export function getUIState() {
   return loadJSON(KEYS.UI, { selectedDate: todayYMD(), selectedDrillId: "", selectedClubId: "" });
@@ -106,7 +146,7 @@ export function aggregateByClub(shots, clubsIndex) {
     if (!out[clubId]) {
       out[clubId] = {
         clubId,
-        clubName: clubsIndex.get(clubId)?.name ?? clubId,
+        clubName: ((clubsIndex.get(clubId) && clubsIndex.get(clubId).name) ? clubsIndex.get(clubId).name : clubId),
         outcomeTotal: 0,
         success: 0,
         miss: 0,
@@ -139,8 +179,8 @@ export function pct(n, d) {
 
 export function toCSV(rows) {
   const esc = (v) => {
-    const s = String(v ?? "");
-    if (/[,"\n]/.test(s)) return `"${s.replaceAll('"','""')}"`;
+    const s = String((v === null || v === undefined) ? "" : v);
+    if (/[,"\n]/.test(s)) return `"${s.replace(/"/g,'""')}"`;
     return s;
   };
   const keys = Object.keys(rows[0] || {});
@@ -166,4 +206,128 @@ export function listSessionDates(shots, drillId=null) {
     if (!drillId || s.drillId === drillId) set.add(s.date);
   }
   return Array.from(set).sort(); // yyyy-mm-dd sorts naturally
+}
+
+
+export function getSessionNote(dateYMD, drillId, clubId) {
+  const all = loadJSON(KEYS.NOTES, {});
+  const key = `${dateYMD}__${drillId}__${clubId}`;
+  return all[key] || "";
+}
+
+export function setSessionNote(dateYMD, drillId, clubId, text) {
+  const all = loadJSON(KEYS.NOTES, {});
+  const key = `${dateYMD}__${drillId}__${clubId}`;
+  all[key] = String(text || "");
+  saveJSON(KEYS.NOTES, all);
+}
+
+
+// --- Club Notes (running log) ---
+// Stored as an array per (date + club). Each note is its own record.
+export function getClubNotes(dateYMD, clubId) {
+  const all = loadJSON(KEYS.CLUB_NOTES, {});
+  const key = `${dateYMD}__${clubId}`;
+  const arr = all[key];
+  return Array.isArray(arr) ? arr : [];
+}
+
+export function addClubNote(dateYMD, clubId, text, drillId = "") {
+  const clean = String(text || "").trim();
+  if (!clean) return null;
+  const all = loadJSON(KEYS.CLUB_NOTES, {});
+  const key = `${dateYMD}__${clubId}`;
+  const arr = Array.isArray(all[key]) ? all[key] : [];
+  const note = {
+    id: ((typeof crypto !== "undefined" && crypto.randomUUID) ? crypto.randomUUID() : uid()),
+    timestamp: new Date().toISOString(),
+    date: dateYMD,
+    clubId,
+    drillId: drillId || "",
+    text: clean
+  };
+  arr.push(note);
+  all[key] = arr;
+  saveJSON(KEYS.CLUB_NOTES, all);
+  return note;
+}
+
+export function deleteClubNote(dateYMD, clubId, noteId) {
+  const all = loadJSON(KEYS.CLUB_NOTES, {});
+  const key = `${dateYMD}__${clubId}`;
+  const arr = Array.isArray(all[key]) ? all[key] : [];
+  all[key] = arr.filter(n => n.id !== noteId);
+  saveJSON(KEYS.CLUB_NOTES, all);
+}
+
+
+
+
+// Get the most recent N notes for a club across all dates (newest first)
+export function getRecentNotesForClub(clubId, limit = 2) {
+  const all = loadJSON(KEYS.CLUB_NOTES, {});
+  const out = [];
+  for (const arr of Object.values(all)) {
+    if (!Array.isArray(arr)) continue;
+    for (const n of arr) {
+      if (n && n.clubId === clubId) out.push(n);
+    }
+  }
+  out.sort((a,b)=> (b.timestamp||"").localeCompare(a.timestamp||""));
+  return out.slice(0, Math.max(0, limit|0));
+}
+
+// Utility: parse YYYY-MM-DD into a Date (local midnight)
+export function ymdToDate(ymd) {
+  if (!ymd) return null;
+  const [y,m,d] = String(ymd).split("-").map(Number);
+  if (!y || !m || !d) return null;
+  return new Date(y, m-1, d);
+}
+
+// --- Backup / Restore (JSON) ---
+export function exportBackupJSON() {
+  const payload = {
+    meta: {
+      exportedAt: new Date().toISOString(),
+      version: 1,
+      keys: KEYS,
+    },
+    data: {
+      shots: loadJSON(KEYS.SHOTS, []),
+      clubs: loadJSON(KEYS.CLUBS, []),
+      drills: loadJSON(KEYS.DRILLS, []),
+      ui: loadJSON(KEYS.UI, {}),
+      notes: loadJSON(KEYS.NOTES, {}),
+      clubNotes: loadJSON(KEYS.CLUB_NOTES, {}),
+    }
+  };
+  const ymd = todayYMD();
+  const filename = `golf-practice-backup-${ymd}.json`;
+  downloadText(filename, JSON.stringify(payload, null, 2), "application/json");
+  toast("Downloaded JSON backup");
+}
+
+export function importBackupJSON(text) {
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    toast("Invalid JSON file");
+    return { ok: false, error: "invalid_json" };
+  }
+  const data = parsed && parsed.data;
+  if (!data || typeof data !== "object") {
+    toast("Backup file missing data");
+    return { ok: false, error: "missing_data" };
+  }
+  // Write only our known keys; fall back to empty structures
+  saveJSON(KEYS.SHOTS, Array.isArray(data.shots) ? data.shots : []);
+  saveJSON(KEYS.CLUBS, Array.isArray(data.clubs) ? data.clubs : DEFAULT_CLUBS);
+  saveJSON(KEYS.DRILLS, Array.isArray(data.drills) ? data.drills : ensure28Drills(DEFAULT_DRILLS));
+  saveJSON(KEYS.UI, data.ui && typeof data.ui === "object" ? data.ui : { selectedDate: todayYMD(), selectedDrillId: "", selectedClubId: "" });
+  saveJSON(KEYS.NOTES, data.notes && typeof data.notes === "object" ? data.notes : {});
+  saveJSON(KEYS.CLUB_NOTES, data.clubNotes && typeof data.clubNotes === "object" ? data.clubNotes : {});
+  toast("Imported backup — reloading…");
+  return { ok: true };
 }
